@@ -5,74 +5,13 @@ import statsmodels.api as sm
 import random
 
 
-def search_year(dt, t, start_year=1983, end_year=None):
-    """
-    Return start year 01/01 00:00 ~ end_year-1 12/31 23:00
-    :param dt: data
-    :param t: time
-    :param start_year: int
-    :param end_year: int or none if it is 2022
-    :return: start year 01/01 00:00 ~ end_year-1 12/31 23:00
-    """
-    start_number, end_number = -1, -1
-    s_flag, e_flag = True, True
-    end_year = None if end_year == 2022 else end_year
-    if end_year and (s_flag or e_flag):
-        end_year += 1
-        for i in range(len(dt)):
-            if t[i][:4] == str(start_year) and s_flag:
-                start_number = i
-                s_flag = False
-            elif t[i][:4] == str(end_year) and e_flag:
-                end_number = i
-                e_flag = False
-    elif not end_year:
-        end_number = len(dt)
-        for i in range(len(dt)):
-            if t[i][:4] == str(start_year) and s_flag:
-                start_number = i
-                s_flag = False
-    return start_number, end_number - 1
-
-
-def cal_valid_time(t_data, interval=72):
-    """
-    Find the missing data interval longer than interval. Return valid segmentation
-    :param t_data: time series data with missing data marked as -99999
-    :param interval: interval, hours
-    :return: 2 lists, [start_1, ..., start_n], [end_1, ..., end_n]
-    """
-    state = 'invalid'
-    state_count = 0
-    start_t = []
-    end_t = []
-    for i, d in enumerate(t_data):
-        if d != -99999:
-            if state == 'invalid':
-                state = 'valid'
-                start_t.append(i)
-            state_count = 0
-        else:
-            if state == 'invalid':
-                continue
-            else:
-                if state_count >= interval:
-                    state = 'invalid'
-                    state_count = 0
-                    end_t.append(i - interval - 1)
-                else:
-                    state_count += 1
-    if len(start_t) > len(end_t):
-        end_t.append(len(t_data) - 1)
-    return start_t, end_t
-
-
 class DataInterpolate:
     def __init__(self, dt, station_index):
         """
         :param dt: original data
         :param station_index: station number
         """
+        print('Initialization...')
         self.origin_data = dt[:, 1:]
         self.origin_T = dt[:, 0]
         self.original_X = np.arange(len(self.origin_data))
@@ -81,7 +20,6 @@ class DataInterpolate:
         self.operate_X = self.original_X
         self.validate_X = None
         self.validate_data_true = None
-        # self.validate_data = []
         self.validate_data_period = []
         self.validate_data_linear = []
         self.valid_X = None
@@ -90,7 +28,6 @@ class DataInterpolate:
         self.invalid_data = None
         self.index = station_index
         self.integrity = []
-        self.all_data = None
         self.day_data = None
         self.station_num = len(self.origin_data[0, :])
         self.invalid_data_period = None
@@ -99,6 +36,10 @@ class DataInterpolate:
         self.validate_data_linear = []
         self.operate_data_period = None
         self.operate_data_linear = None
+        self.validate_X_index = []
+        self.validate_data_true_index = []
+        self.station_id = self.origin_data[0, :]
+        self.location = (self.origin_data[1:3, :])
 
     def generate_dataset(self, interval, year=None):
         """
@@ -112,18 +53,15 @@ class DataInterpolate:
         :param year: list, which years are going to be operated. If None, all data.
         :return:
         """
+        print('Generating dataset...')
         if year:
             s_t, e_t = self.search_year(start_year=year[0], end_year=year[1])
             self.operate_data = self.origin_data[s_t:e_t + 1, :]
             self.operate_T = self.origin_T[s_t:e_t + 1]
             self.operate_X = np.arange(len(self.operate_data))
         s_t, e_t = self.generate_val_data(self.operate_data[:, self.index], interval)
-        # num = [s_t[len(s_t) // 4 + 1] + interval // 2, s_t[len(s_t) // 2 + 1] + interval // 2,
-        #        s_t[len(s_t) // 4 * 3 + 1] + interval // 2]
         num = random.sample(s_t, 40)
         num = [i + 12 for i in num]
-        self.validate_X_index = []
-        self.validate_data_true_index = []
         for i in range(0, 10):
             self.validate_X_index.append(list(self.operate_X[num[i]:num[i] + 1]))
             self.validate_data_true_index.append((list(self.operate_data[num[i]:num[i] + 1, self.index])))
@@ -172,7 +110,7 @@ class DataInterpolate:
         :param interval: int, length of validate_data
         :return: start_t, end_t, index of the clip
         """
-        interval = interval * 2  # To aviod the clip start after -99999
+        interval = interval * 2  # To avoid the clip start after -99999
         start_t = []
         end_t = []
         count = 0
@@ -222,53 +160,15 @@ class DataInterpolate:
                     s_flag = False
         return start_number, end_number - 1
 
-    def cal_integrity(self):
-        """
-        Calculate the data integrity
-        :return:
-        """
-        self.integrity = []
-        station_number = []
-        count = 0
-        index = []
-        for i in range(len(self.operate_data)):
-            if sum(self.operate_data[i, :]) == -99999 * 29:
-                self.integrity.append(0)
-                station_number.append([-1])
-                continue
-            for j in range(29):
-                if self.operate_data[i, j] != -99999:
-                    count += 1
-                    index.append(j)
-            self.integrity.append(count)
-            count = 0
-            station_number.append(index)
-            index = []
-
-        plt.scatter(np.arange(len(self.integrity)), self.integrity, marker='.')
-        tick = [i[:4] for i in self.operate_T if i[4:] == '/1/1 00:00']
-        tick.append(str(int(tick[-1]) + 1))
-        year_number = len(self.operate_data) // (365 * 24) + 1
-        if year_number >= 30:
-            plt.xticks(np.arange(0, 8760 * year_number, 8760 * 4), [j for i, j in enumerate(tick) if i % 4 == 0])
-        elif 15 < year_number < 30:
-            plt.xticks(np.arange(0, 8760 * year_number, 8760 * 2), [j for i, j in enumerate(tick) if i % 2 == 0])
-        else:
-            plt.xticks(np.arange(0, 8760 * year_number, 8760), [j for i, j in enumerate(tick)])
-        plt.yticks(np.arange(0, 26, 2))
-        plt.title('Data integrity')
-        plt.xlabel('Date')
-        plt.ylabel('Numbers of station')
-        plt.show()
-
     def plot(self):
         """
         Plot data.
         :return:
         """
+        print('Plotting...')
         fig, ax = plt.subplots()
-        ax.plot(self.operate_X, self.operate_data_period[:, self.index], label='period_all')
-        ax.plot(self.operate_X, self.operate_data_linear, label='linear_all')
+        ax.plot(self.operate_X, self.operate_data_period[:, self.index], label='Period')
+        ax.plot(self.operate_X, self.operate_data_linear, label='Linear')
         self.invalid_data_period = list(self.invalid_X)
         self.invalid_data_linear = list(self.invalid_X)
         for i in range(len(self.invalid_X)):
@@ -276,11 +176,6 @@ class DataInterpolate:
             self.invalid_data_linear[i] = self.operate_data_linear[self.invalid_X[i]]
         ax.scatter(self.invalid_X, self.invalid_data_period)
         ax.scatter(self.invalid_X, self.invalid_data_linear)
-        # tmp = [0, len(self.validate_X) // 3, len(self.validate_X) // 3 * 2, len(self.validate_X)]
-        # ax.plot(self.validate_X[tmp[0]:tmp[1]], self.validate_data_true[tmp[0]:tmp[1]], 'b')
-        # ax.plot(self.validate_X[tmp[1]:tmp[2]], self.validate_data_true[tmp[1]:tmp[2]], 'b')
-        # ax.plot(self.validate_X[tmp[2]:tmp[3]], self.validate_data_true[tmp[2]:tmp[3]], 'b', label='true')
-        # ax.scatter(self.validate_X, self.validate_data_true, marker='*')
         for i in range(len(self.validate_X_index)):
             if i == len(self.validate_X_index) - 1:
                 if len(self.validate_X_index[i]) == 1:
@@ -293,15 +188,27 @@ class DataInterpolate:
                 else:
                     ax.plot(self.validate_X_index[i], self.validate_data_true_index[i], 'b')
         ax.legend()
+        tick = [i[:4] for i in self.operate_T if i[4:] == '/1/1 00:00']
+        tick.append(str(int(tick[-1]) + 1))
+        year_number = len(self.operate_data) // (365 * 24) + 1
+        if year_number >= 30:
+            plt.xticks(np.arange(0, 8760 * year_number, 8760 * 4), [j for i, j in enumerate(tick) if i % 4 == 0])
+        elif 15 < year_number < 30:
+            plt.xticks(np.arange(0, 8760 * year_number, 8760 * 2), [j for i, j in enumerate(tick) if i % 2 == 0])
+        else:
+            plt.xticks(np.arange(0, 8760 * year_number, 8760), [j for i, j in enumerate(tick)])
+        plt.ylabel('ppb')
+        plt.xlabel('Time')
         plt.show()
 
     def interpolate(self, func, kind='linear'):
         """
         Interpolation
-        :param func: Interpolation method.
-        :param kind: Interpolation kind.
+        :param func: Interpolation method
+        :param kind: Interpolation kind
         :return:
         """
+        print('Interpolating with ' + str(kind) + '...')
         if func == 'OLS':
             # To be finished.
             index = 0
@@ -331,110 +238,73 @@ class DataInterpolate:
                     tmp.sort()
                     self.valid_X, self.valid_data = zip(*tmp)
         elif func == 'interpolate.interp1d':
-            self.valid_X = list(self.valid_X)
-            self.valid_data = list(self.valid_data)
-            self.valid_X.append(0)
-            self.valid_data.append(0)
-            f = interpolate.interp1d(self.valid_X, self.valid_data, kind=kind)
-            self.operate_data_linear = f(self.operate_X)
-            self.validate_data_linear = f(self.validate_X)
-            return
-
-            index = 0
-            for i in range(0, len(self.invalid_X)):
-                if i == 0:
-                    y_pre = 0
-                    self.valid_X = np.append(self.valid_X, self.invalid_X[i])
-                    self.valid_data = np.append(self.valid_data, y_pre)
-                    tmp = list(zip(self.valid_X, self.valid_data))
-                    tmp.sort()
-                    self.valid_X, self.valid_data = zip(*tmp)
-                    continue
+            if kind == 'linear':
                 self.valid_X = list(self.valid_X)
                 self.valid_data = list(self.valid_data)
-                if self.invalid_X[i] not in self.validate_X:
-                    index = self.valid_X[index:].index(self.invalid_X[i] - 1) + index
+                self.valid_X.append(0)
+                self.valid_data.append(0)
+                f = interpolate.interp1d(self.valid_X, self.valid_data, kind=kind)
+                self.operate_data_linear = f(self.operate_X)
+                self.validate_data_linear = f(self.validate_X)
+            else:
+                # Window slide, it is not necessary if interpolate method is linear
+                index = 0
+                for i in range(0, len(self.invalid_X)):
+                    if i == 0:
+                        y_pre = 0
+                        self.valid_X = np.append(self.valid_X, self.invalid_X[i])
+                        self.valid_data = np.append(self.valid_data, y_pre)
+                        tmp = list(zip(self.valid_X, self.valid_data))
+                        tmp.sort()
+                        self.valid_X, self.valid_data = zip(*tmp)
+                        continue
+                    self.valid_X = list(self.valid_X)
+                    self.valid_data = list(self.valid_data)
+                    if self.invalid_X[i] not in self.validate_X:
+                        index = self.valid_X[index:].index(self.invalid_X[i] - 1) + index
+                        if index < 24:
+                            y_pre = 0
+                        else:
+                            xx = np.array(self.valid_X[index - 24:index + 24])
+                            f = interpolate.interp1d(xx, self.valid_data[index - 24:index + 24], kind=kind)
+                            y_pre = f(self.invalid_X[i])
+                        self.valid_X = np.append(self.valid_X, self.invalid_X[i])
+                        self.valid_data = np.append(self.valid_data, y_pre)
+                        tmp = list(zip(self.valid_X, self.valid_data))
+                        tmp.sort()
+                        self.valid_X, self.valid_data = zip(*tmp)
+                index = 0
+                for i in range(len(self.validate_X)):
+                    self.valid_X = list(self.valid_X)
+                    self.valid_data = list(self.valid_data)
+                    index = self.valid_X[index:].index(self.validate_X[i] - 1) + index
                     if index < 24:
                         y_pre = 0
                     else:
                         xx = np.array(self.valid_X[index - 24:index + 24])
                         f = interpolate.interp1d(xx, self.valid_data[index - 24:index + 24], kind=kind)
-                        y_pre = f(self.invalid_X[i])
-                    self.valid_X = np.append(self.valid_X, self.invalid_X[i])
+                        y_pre = f(self.validate_X[i])
+                    self.validate_data_linear.append(y_pre)
+                    self.valid_X = np.append(self.valid_X, self.validate_X[i])
                     self.valid_data = np.append(self.valid_data, y_pre)
                     tmp = list(zip(self.valid_X, self.valid_data))
                     tmp.sort()
                     self.valid_X, self.valid_data = zip(*tmp)
-            index = 0
-            for i in range(len(self.validate_X)):
-                self.valid_X = list(self.valid_X)
-                self.valid_data = list(self.valid_data)
-                index = self.valid_X[index:].index(self.validate_X[i] - 1) + index
-                if index < 24:
-                    y_pre = 0
-                else:
-                    xx = np.array(self.valid_X[index - 24:index + 24])
-                    f = interpolate.interp1d(xx, self.valid_data[index - 24:index + 24], kind=kind)
-                    y_pre = f(self.validate_X[i])
-                self.validate_data_linear.append(y_pre)
-                self.valid_X = np.append(self.valid_X, self.validate_X[i])
-                self.valid_data = np.append(self.valid_data, y_pre)
-                tmp = list(zip(self.valid_X, self.valid_data))
-                tmp.sort()
-                self.valid_X, self.valid_data = zip(*tmp)
-            self.operate_data_linear = self.valid_data
-
-    def cal_missing_length(self):
-        """
-        Calculate the length of continuous missing data.
-        :return:
-        """
-        xx = []
-        yy = []
-        length = []
-        count = 0
-        for j in range(len(self.operate_data[1, :])):
-            length.append([])
-            flag = 'valid'
-            for i in range(len(self.operate_data)):
-                xx.append(i)
-                if self.operate_data[i, j] == -99999:
-                    yy.append(j + 1)
-                    if flag == 'valid':
-                        count = 1
-                        flag = 'invalid'
-                    elif flag == 'invalid':
-                        count += 1
-                else:
-                    yy.append(0)
-                    if flag == 'invalid':
-                        length[j].append(count)
-                        flag = 'valid'
-            if flag == 'invalid':
-                length[j].append(count)
-            length[j].sort(reverse=True)
-        tmp = []
-        for i in range(len(length)):
-            tmp.append(length[i][0])
-        print(tmp)
-        plt.scatter(xx, yy, marker='_')
-        plt.title('Data missing length')
-        plt.xlabel('Date')
-        plt.ylabel('Index of station')
-        plt.show()
+                self.operate_data_linear = self.valid_data
 
     def period_factor(self, index=None):
         """
-        Interpolation with the method of period factor.
+        Interpolation with the method of period factor
         :param index: station number list
         :return:
         """
+        print('Interpolating with period factor...')
         for day, val_day in enumerate(self.day_data):
             for hour, value in enumerate(val_day):
                 for station in index:
                     if value[station] == -99999:
                         pre = self.cal_prediction(day, hour, station)
-                        self.day_data[day, hour] = pre
+                        self.day_data[day, hour, station] = pre
 
         self.operate_data_period = self.day_data.reshape(-1, self.station_num)
         for i in range(len(self.validate_X)):
@@ -531,7 +401,8 @@ class DataInterpolate:
             #         break
             # previous = self.day_data[day, hour-1, station]
             # future = self.day_data[tmp_d, tmp_h, station]
-            # result = self.day_data[day, hour-1, station] + ((self.day_data[tmp_d, tmp_h, station] - self.day_data[day, hour-1, station]) / (count + 1))
+            # result = self.day_data[day, hour-1, station] +
+            #        ((self.day_data[tmp_d, tmp_h, station] - self.day_data[day, hour-1, station]) / (count + 1))
             # print(result)
             # c = count
         return result
@@ -541,6 +412,7 @@ class DataInterpolate:
         """
         Calculate the mean square error.
         """
+        print('Calculating MSE...')
         if type(arr1) is not np.ndarray:
             arr1 = np.array(arr1)
         if type(arr2) is not np.ndarray:
@@ -554,6 +426,7 @@ class DataInterpolate:
         """
         Calculate the r square.
         """
+        print('Calculating R square...')
         if type(arr1) is not np.ndarray:
             arr1 = np.array(arr1)
         if type(arr2) is not np.ndarray:
@@ -571,3 +444,147 @@ class DataInterpolate:
             var_y += diff_yy_bar ** 2
         sst = np.sqrt(var_x * var_y)
         return (ssr / sst) ** 2
+
+    def cal_integrity(self):
+        """
+        Calculate the data integrity
+        :return:
+        """
+        print('Calculating data integrity...')
+        self.integrity = []
+        station_number = []
+        count = 0
+        index = []
+        for i in range(len(self.operate_data)):
+            if sum(self.operate_data[i, :]) == -99999 * 29:
+                self.integrity.append(0)
+                station_number.append([-1])
+                continue
+            for j in range(29):
+                if self.operate_data[i, j] != -99999:
+                    count += 1
+                    index.append(j)
+            self.integrity.append(count)
+            count = 0
+            station_number.append(index)
+            index = []
+
+        plt.figure()
+        plt.scatter(np.arange(len(self.integrity)), self.integrity, marker='.')
+        tick = [i[:4] for i in self.operate_T if i[4:] == '/1/1 00:00']
+        tick.append(str(int(tick[-1]) + 1))
+        year_number = len(self.operate_data) // (365 * 24) + 1
+        if year_number >= 30:
+            plt.xticks(np.arange(0, 8760 * year_number, 8760 * 4), [j for i, j in enumerate(tick) if i % 4 == 0])
+        elif 15 < year_number < 30:
+            plt.xticks(np.arange(0, 8760 * year_number, 8760 * 2), [j for i, j in enumerate(tick) if i % 2 == 0])
+        else:
+            plt.xticks(np.arange(0, 8760 * year_number, 8760), [j for i, j in enumerate(tick)])
+        plt.yticks(np.arange(0, 26, 2))
+        plt.title('Data integrity')
+        plt.xlabel('Time')
+        plt.ylabel('Index of station')
+        # plt.show()
+
+    def cal_missing_length(self):
+        """
+        Calculate the length of continuous missing data.
+        :return:
+        """
+        print('Calculating length of missing data...')
+        xx = []
+        yy = []
+        length = []
+        count = 0
+        for j in range(len(self.operate_data[1, :])):
+            length.append([])
+            flag = 'valid'
+            for i in range(len(self.operate_data)):
+                xx.append(i)
+                if self.operate_data[i, j] == -99999:
+                    yy.append(j + 1)
+                    if flag == 'valid':
+                        count = 1
+                        flag = 'invalid'
+                    elif flag == 'invalid':
+                        count += 1
+                else:
+                    yy.append(0)
+                    if flag == 'invalid':
+                        length[j].append(count)
+                        flag = 'valid'
+            if flag == 'invalid':
+                length[j].append(count)
+            length[j].sort(reverse=True)
+        tmp = []
+        for i in range(len(length)):
+            tmp.append(length[i][0])
+        print('Max length of each station:', tmp)
+        plt.figure()
+        plt.scatter(xx, yy, marker='_')
+        plt.title('Data missing length')
+        plt.xlabel('Time')
+        plt.ylabel('Index of station')
+        # plt.show()
+
+
+def search_year(dt, t, start_year=1983, end_year=None):
+    """
+    Return start year 01/01 00:00 ~ end_year-1 12/31 23:00
+    :param dt: data
+    :param t: time
+    :param start_year: int
+    :param end_year: int or none if it is 2022
+    :return: start year 01/01 00:00 ~ end_year-1 12/31 23:00
+    """
+    start_number, end_number = -1, -1
+    s_flag, e_flag = True, True
+    end_year = None if end_year == 2022 else end_year
+    if end_year and (s_flag or e_flag):
+        end_year += 1
+        for i in range(len(dt)):
+            if t[i][:4] == str(start_year) and s_flag:
+                start_number = i
+                s_flag = False
+            elif t[i][:4] == str(end_year) and e_flag:
+                end_number = i
+                e_flag = False
+    elif not end_year:
+        end_number = len(dt)
+        for i in range(len(dt)):
+            if t[i][:4] == str(start_year) and s_flag:
+                start_number = i
+                s_flag = False
+    return start_number, end_number - 1
+
+
+def cal_valid_time(t_data, interval=72):
+    """
+    Find the missing data interval longer than interval. Return valid segmentation
+    :param t_data: time series data with missing data marked as -99999
+    :param interval: interval, hours
+    :return: 2 lists, [start_1, ..., start_n], [end_1, ..., end_n]
+    """
+    state = 'invalid'
+    state_count = 0
+    start_t = []
+    end_t = []
+    for i, d in enumerate(t_data):
+        if d != -99999:
+            if state == 'invalid':
+                state = 'valid'
+                start_t.append(i)
+            state_count = 0
+        else:
+            if state == 'invalid':
+                continue
+            else:
+                if state_count >= interval:
+                    state = 'invalid'
+                    state_count = 0
+                    end_t.append(i - interval - 1)
+                else:
+                    state_count += 1
+    if len(start_t) > len(end_t):
+        end_t.append(len(t_data) - 1)
+    return start_t, end_t
