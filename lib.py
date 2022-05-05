@@ -13,6 +13,7 @@ class DataInterpolate:
         """
         print('Initialization...')
         self.origin_data = dt[:, 1:]
+        self.origin_data[4:, :] = self.origin_data[4:, :].astype(np.float)
         self.origin_T = dt[:, 0]
         self.original_X = np.arange(len(self.origin_data))
         self.operate_data = self.origin_data
@@ -60,35 +61,36 @@ class DataInterpolate:
             self.operate_T = self.origin_T[s_t:e_t + 1]
             self.operate_X = np.arange(len(self.operate_data))
         s_t, e_t = self.generate_val_data(self.operate_data[:, self.index], interval)
-        num = random.sample(s_t, 40)
+        total_num = min(40, len(s_t) // 4 * 4)
+        num = random.sample(s_t, total_num)
         num = [i + 12 for i in num]
-        for i in range(0, 10):
-            self.validate_X_index.append(list(self.operate_X[num[i]:num[i] + 1]))
-            self.validate_data_true_index.append((list(self.operate_data[num[i]:num[i] + 1, self.index])))
-        for i in range(10, 20):
+        for i in range(0, total_num // 4):
+            self.validate_X_index.append(list(self.operate_X[num[i]:num[i] + 18]))
+            self.validate_data_true_index.append((list(self.operate_data[num[i]:num[i] + 18, self.index])))
+        for i in range(total_num // 4, total_num // 2):
             self.validate_X_index.append(list(self.operate_X[num[i]:num[i] + 6]))
             self.validate_data_true_index.append((list(self.operate_data[num[i]:num[i] + 6, self.index])))
-        for i in range(20, 30):
+        for i in range(total_num // 2, total_num // 4 * 3):
             self.validate_X_index.append(list(self.operate_X[num[i]:num[i] + 12]))
             self.validate_data_true_index.append((list(self.operate_data[num[i]:num[i] + 12, self.index])))
-        for i in range(30, 40):
+        for i in range(total_num // 4 * 3, total_num):
             self.validate_X_index.append(list(self.operate_X[num[i]:num[i] + 24]))
             self.validate_data_true_index.append((list(self.operate_data[num[i]:num[i] + 24, self.index])))
         self.validate_X = self.operate_X[num[0]:num[0] + 1]
         self.validate_data_true = self.operate_data[num[0]:num[0] + 1, self.index]
-        for i in range(1, 10):
-            self.validate_X = np.append(self.validate_X, [self.operate_X[num[i]:num[i] + 1]])
+        for i in range(1, total_num // 4):
+            self.validate_X = np.append(self.validate_X, [self.operate_X[num[i]:num[i] + 18]])
             self.validate_data_true = np.append(self.validate_data_true,
-                                                [self.operate_data[num[i]:num[i] + 1, self.index]])
-        for i in range(10, 20):
+                                                [self.operate_data[num[i]:num[i] + 18, self.index]])
+        for i in range(total_num // 4, total_num // 2):
             self.validate_X = np.append(self.validate_X, [self.operate_X[num[i]:num[i] + 6]])
             self.validate_data_true = np.append(self.validate_data_true,
                                                 [self.operate_data[num[i]:num[i] + 6, self.index]])
-        for i in range(20, 30):
+        for i in range(total_num // 2, total_num // 4 * 3):
             self.validate_X = np.append(self.validate_X, [self.operate_X[num[i]:num[i] + 12]])
             self.validate_data_true = np.append(self.validate_data_true,
                                                 [self.operate_data[num[i]:num[i] + 12, self.index]])
-        for i in range(30, 40):
+        for i in range(total_num // 4 * 3, total_num):
             self.validate_X = np.append(self.validate_X, [self.operate_X[num[i]:num[i] + 24]])
             self.validate_data_true = np.append(self.validate_data_true,
                                                 [self.operate_data[num[i]:num[i] + 24, self.index]])
@@ -179,12 +181,12 @@ class DataInterpolate:
         for i in range(len(self.validate_X_index)):
             if i == len(self.validate_X_index) - 1:
                 if len(self.validate_X_index[i]) == 1:
-                    ax.scatter(self.validate_X_index[i], self.validate_data_true_index[i], marker='*')
+                    ax.scatter(self.validate_X_index[i], self.validate_data_true_index[i], marker='*', c='b', s=100)
                 else:
                     ax.plot(self.validate_X_index[i], self.validate_data_true_index[i], 'b', label='Validation')
             else:
                 if len(self.validate_X_index[i]) == 1:
-                    ax.scatter(self.validate_X_index[i], self.validate_data_true_index[i], marker='*')
+                    ax.scatter(self.validate_X_index[i], self.validate_data_true_index[i], marker='*', c='b', s=100)
                 else:
                     ax.plot(self.validate_X_index[i], self.validate_data_true_index[i], 'b')
         ax.legend()
@@ -303,8 +305,7 @@ class DataInterpolate:
             for hour, value in enumerate(val_day):
                 for station in index:
                     if value[station] == -99999:
-                        pre = self.cal_prediction(day, hour, station)
-                        self.day_data[day, hour, station] = pre
+                        self.day_data[day, hour, station] = self.cal_prediction(day, hour, station)
 
         self.operate_data_period = self.day_data.reshape(-1, self.station_num)
         for i in range(len(self.validate_X)):
@@ -321,7 +322,7 @@ class DataInterpolate:
 
         # To be developed
         # if day < 5, just predict as 0
-        if day < 5:
+        if day < 5 or day > len(self.operate_data) - 5:
             if hour > 0:
                 return self.day_data[day, hour - 1, station]
             elif day > 0:
@@ -333,12 +334,12 @@ class DataInterpolate:
         pre_data, suf_data = [], []
         count = 0
         for i in range(day - 1):
-            if sum(self.day_data[day - i - 1, :, station]) != -99999 * 24 and count < 5:
+            if sum(self.day_data[day - i - 1, :, station]) != -99999 * 24 and count < 5 and sum(self.day_data[day - i - 1, :, station]) != 0:
                 pre_data.append(self.day_data[day - i - 1, :, station])
                 count += 1
         count = 0
         for i in range(day + 1, len(self.day_data)):
-            if sum(self.day_data[i, :, station]) != -99999 * 24 and count < 5:
+            if sum(self.day_data[i, :, station]) > 0 and count < 5:
                 suf_data.append(self.day_data[i, :, station])
                 count += 1
         pre_data_ratio = pre_data[0] / np.mean(pre_data[0])
@@ -350,7 +351,7 @@ class DataInterpolate:
         pre_data_ratio = pre_data_ratio.reshape(-1, 24)
         suf_data_ratio = suf_data_ratio.reshape(-1, 24)
         pre_base = np.mean(pre_data[0])
-        # suf_base = np.mean(suf_data[0])
+        suf_base = np.mean(suf_data[0])
         pre_median = [np.median(i) for i in np.transpose(pre_data_ratio)]
         suf_median = [np.median(i) for i in np.transpose(suf_data_ratio)]
         pre_mean = [np.mean(i) for i in np.transpose(pre_data_ratio)]
@@ -363,7 +364,7 @@ class DataInterpolate:
         # result = [pre_factor[hour] * pre_base]
         # result = [suf_factor[hour] * suf_base]
 
-        res = [i * pre_base for i in pre_factor]
+        res = [pre_factor[i] * pre_base / 2 + suf_factor[i] * suf_base /2 for i in range(len(pre_factor))]
         # res = [pre_factor[i]*pre_base*0.99 + suf_factor[i]*suf_base*0.01 for i in range(len(pre_factor))]
 
         # If the true values of other hours' data in the same day are known, use them to correct the prediction value
@@ -373,21 +374,30 @@ class DataInterpolate:
         # Values near 0 cannot be interpolated with this method, use the minimum value of the local area instead
         less6_count = 0
         min_val = 99999
+        max_val = 0
         for i in range(24):
             if self.day_data[day, i, station] != -99999:
                 bias += self.day_data[day, i, station] - res[i]
+                # bias = 0
                 count += 1
                 if self.day_data[day, i, station] < min_val:
                     min_val = self.day_data[day, i, station]
+                if self.day_data[day, i, station] > max_val:
+                    max_val = self.day_data[day, i, station]
                 if self.day_data[day, i, station] < 6:
                     less6_count += 1
-        if res[hour] + 1 * bias < 3:
+        if res[hour] + 1 * bias < 1 and count:
             result = max(res[hour] + 1 * bias / count, min_val)
+        elif res[hour] > 2 * max_val and count:
+            result = min(res[hour] + 1 * bias / count, max_val)
         else:
             result = res[hour]
         if less6_count >= 10 and self.day_data[day, max(hour - 1, 0), station] < 6:
             'For the near 0 situation'
-            result = self.day_data[day, max(hour - 1, 0), station]
+            if hour > 0:
+                result = max(self.day_data[day, hour - 1, station], result)
+            else:
+                result = max(self.day_data[day - 1, 23, station], result)
             # tmp_d = day
             # tmp_h = hour
             # count = 0
@@ -408,18 +418,18 @@ class DataInterpolate:
         return result
 
     @staticmethod
-    def cal_mse(arr1, arr2):
+    def cal_rmse(arr1, arr2):
         """
-        Calculate the mean square error.
+        Calculate the root mean square error.
         """
-        print('Calculating MSE...')
+        print('Calculating RMSE...')
         if type(arr1) is not np.ndarray:
             arr1 = np.array(arr1)
         if type(arr2) is not np.ndarray:
             arr2 = np.array(arr2)
         if len(arr1) != len(arr2):
             raise Exception('Length of two arrays are different.')
-        return np.mean(np.square(arr1 - arr2))
+        return np.sqrt(np.mean(np.square(arr1 - arr2)))
 
     @staticmethod
     def cal_r2(arr1, arr2):
@@ -518,7 +528,7 @@ class DataInterpolate:
             length[j].sort(reverse=True)
         tmp = []
         for i in range(len(length)):
-            tmp.append(length[i][0])
+            tmp.append(length[i][0:10])
         print('Max length of each station:', tmp)
         plt.figure()
         plt.scatter(xx, yy, marker='_')
